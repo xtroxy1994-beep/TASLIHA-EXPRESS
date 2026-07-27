@@ -1,0 +1,166 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+
+    function isManager() {
+      return getUserRole() == 'manager' || isAdmin();
+    }
+
+    function isTech() {
+      return getUserRole() == 'tech';
+    }
+
+    function isClient() {
+      return getUserRole() == 'client';
+    }
+
+    function requestIsAccepted(requestId) {
+      let req = get(/databases/$(database)/documents/requests/$(requestId)).data;
+      return req.status == 'accepted' || req.status == 'in_progress' || req.status == 'completed';
+    }
+
+    function isParticipantInRequest(requestId) {
+      let req = get(/databases/$(database)/documents/requests/$(requestId)).data;
+      return request.auth.uid == req.clientId || request.auth.uid == req.acceptedTechId;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Anyone signed in can read basic profile
+      allow read: if isSignedIn();
+
+      // Only the user themselves or admin can write
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+
+      // Hide sensitive fields from non-owners
+      // Note: Firestore doesn't support field-level security natively;
+      // use Cloud Functions or a proxy to strip 'phone' from non-participants.
+    }
+
+    // ── Requests ──────────────────────────────────────────────────────────────
+    match /requests/{requestId} {
+      // Clients can read their own requests
+      // Techs can read available requests (status == 'available')
+      // Managers and admins can read all
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        isManager() ||
+        resource.data.clientId == request.auth.uid ||
+        (isTech() && resource.data.status == 'available') ||
+        (isTech() && resource.data.acceptedTechId == request.auth.uid)
+      );
+
+      // Only clients can create requests
+      allow create: if isSignedIn() && isClient() && request.resource.data.clientId == request.auth.uid;
+
+      // Updates allowed by:
+      // - Admin (to set points and publish)
+      // - Tech (to accept)
+      // - Client (to cancel their own)
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        isManager() ||
+        (isTech() && resource.data.status == 'available') ||
+        (isOwner(resource.data.clientId) && resource.data.status == 'pending')
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // ── Ratings ───────────────────────────────────────────────────────────────
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      // Only clients can create ratings, and only for completed requests
+      allow create: if isSignedIn() && isClient() && request.resource.data.clientId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Chats ─────────────────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      // Only participants (client + accepted tech) can read the chat room
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.clientId == request.auth.uid ||
+        resource.data.techId == request.auth.uid
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.techId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Messages sub-collection — only chat participants can read/write
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (
+          isAdmin() ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.clientId == request.auth.uid ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.techId == request.auth.uid
+        );
+        allow create: if isSignedIn() && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.clientId == request.auth.uid ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.techId == request.auth.uid
+        );
+        allow update: if isSignedIn() && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.clientId == request.auth.uid ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.techId == request.auth.uid ||
+          isAdmin()
+        );
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ── Point Transactions ────────────────────────────────────────────────────
+    match /point_transactions/{txId} {
+      // Users can read their own transactions; admins see all
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.userId == request.auth.uid
+      );
+      // Only backend/admin creates transactions (via Cloud Functions ideally)
+      allow create: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Recharge Requests ─────────────────────────────────────────────────────
+    match /recharge_requests/{rechargeId} {
+      // Users can read their own recharge requests; admins see all
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.userId == request.auth.uid
+      );
+      // Only the user themselves can create a recharge request
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      // Only admin can approve/reject
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "375029920196",
+    "project_id": "tasliha-express",
+    "storage_bucket": "tasliha-express.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:375029920196:android:e9a128c7f2c134d8f83491",
+        "android_client_info": {
+          "package_name": "com.tasliha.express"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "375029920196-r6mpovpar2114d2tsbjjpcqsslcaov67.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxHmrh9mdFdZ5z2cFfcpS3g6ETSAHt6vU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "375029920196-r6mpovpar2114d2tsbjjpcqsslcaov67.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
